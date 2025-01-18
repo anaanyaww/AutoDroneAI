@@ -11,6 +11,7 @@ import Login from './components/Login';
 import { AuthProvider, useAuth } from './AuthContext';
 import Register from "./components/Register";
 import { AuraProvider } from './components/AURA/AuraContext'; // Add this import
+import CameraFeed from './components/ CameraFeed';
 
 // Protected Route Component
 const ProtectedRoute = ({ element }) => {
@@ -35,6 +36,8 @@ function App() {
             <Route path="/trainingsimulation" element={<ProtectedRoute element={<TrainingSimulation />} />} />
             <Route path="/settings" element={<ProtectedRoute element={<Settings />} />} />
             <Route path="/missioncontrol" element={<ProtectedRoute element={<MissionControl />} />} />
+            <Route path="/camera-feed" element={<CameraFeed/>}/>
+            
           </Routes>
         </Router>
       </AuraProvider>

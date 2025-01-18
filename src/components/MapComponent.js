@@ -3,6 +3,7 @@ import { GoogleMap, Polyline, useLoadScript } from '@react-google-maps/api';
 import axios from 'axios';
 import './MapComponent.css';
 
+
 const libraries = ['drawing', 'places'];
 
 const MapComponent = forwardRef(({ onDispatchDrone }, ref) => {
@@ -11,6 +12,11 @@ const MapComponent = forwardRef(({ onDispatchDrone }, ref) => {
   const [gridLines, setGridLines] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Add states for draggable camera feed
+  const [cameraPosition, setCameraPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef({ startX: 0, startY: 0 });
 
   const center = {
     lat: 17.39716,
@@ -25,6 +31,63 @@ const MapComponent = forwardRef(({ onDispatchDrone }, ref) => {
   const searchBoxRef = useRef(null);
   const mapRef = useRef(null);
   const autocompleteRef = useRef(null);
+
+  // Handle drag start
+  const handleMouseDown = (e) => {
+    setIsDragging(true);
+    dragRef.current = {
+      startX: e.pageX - cameraPosition.x,
+      startY: e.pageY - cameraPosition.y
+    };
+    e.preventDefault();
+    e.stopPropagation(); // Prevent text selection while dragging
+  };
+
+  // Handle dragging
+const handleMouseMove = useCallback((e) => {
+  if (!isDragging) return;
+
+  const newX = e.pageX - dragRef.current.startX;
+  const newY = e.pageY - dragRef.current.startY;
+
+  // Get map container boundaries
+  const mapContainer = document.querySelector('.map-wrapper');
+  const cameraFeed = document.querySelector('.drone-camera-feed');
+  
+  if (mapContainer && cameraFeed) {
+    const mapRect = mapContainer.getBoundingClientRect();
+    const feedRect = cameraFeed.getBoundingClientRect();
+
+    // Constrain within map boundaries
+    const maxX = mapRect.width - feedRect.width;
+    const maxY = mapRect.height - feedRect.height;
+    const minY = 70; // Minimum Y position to avoid search bar
+
+    setCameraPosition({
+      x: Math.min(Math.max(0, newX), maxX),
+      y: Math.min(Math.max(minY, newY), maxY)
+    });
+  }
+}, [isDragging]);
+
+
+  
+  // Handle drag end
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Add event listeners for dragging
+  React.useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, handleMouseMove]);
 
   useImperativeHandle(ref, () => ({
     handleDispatchDrone: () => {
@@ -60,22 +123,42 @@ const MapComponent = forwardRef(({ onDispatchDrone }, ref) => {
     if (typeof window !== 'undefined' && window.google && window.google.maps) {
       const drawingManagerInstance = new window.google.maps.drawing.DrawingManager({
         drawingMode: null,
-        drawingControl: true,
-        drawingControlOptions: {
-          position: window.google.maps.ControlPosition.TOP_CENTER,
-          drawingModes: [window.google.maps.drawing.OverlayType.RECTANGLE],
-        },
+        drawingControl: false,
       });
-
+  
       drawingManagerInstance.setMap(map);
       setDrawingManager(drawingManagerInstance);
-
+  
+      // Create custom buttons for "Draw Rectangle" and "Stop Drawing"
+      const drawRectangleButton = document.createElement('button');
+      drawRectangleButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="black">
+        <rect x="4" y="4" width="16" height="16" />
+      </svg>`;
+      drawRectangleButton.className = 'custom-drawing-button';
+      
+      const stopDrawingButton = document.createElement('button');
+      stopDrawingButton.innerHTML = '&#9995;';
+      stopDrawingButton.className = 'custom-drawing-button';
+  
+      drawRectangleButton.addEventListener('click', () => {
+        drawingManagerInstance.setDrawingMode(window.google.maps.drawing.OverlayType.RECTANGLE);
+      });
+  
+      stopDrawingButton.addEventListener('click', () => {
+        drawingManagerInstance.setDrawingMode(null);
+      });
+  
+      const buttonContainer = document.createElement('div');
+      buttonContainer.className = 'custom-drawing-controls';
+      buttonContainer.appendChild(drawRectangleButton);
+      buttonContainer.appendChild(stopDrawingButton);
+  
+      map.controls[window.google.maps.ControlPosition.RIGHT_TOP].push(buttonContainer);
+  
       window.google.maps.event.addListener(drawingManagerInstance, 'rectanglecomplete', (rectangle) => {
         const bounds = rectangle.getBounds();
         const selectedBounds = bounds.toJSON();
         setSelectedArea(selectedBounds);
-
-        // Call function to draw grid
         drawGrid(selectedBounds);
       });
     }
@@ -89,16 +172,14 @@ const MapComponent = forwardRef(({ onDispatchDrone }, ref) => {
 
   const drawGrid = (area) => {
     const gridLinesArray = [];
-    const latStep = (area.north - area.south) / 10;  // Adjust the grid density here (still keeping it for reference, though unused for vertical only)
-    const lngStep = (area.east - area.west) / 50;  // Increase the number to reduce the spacing between vertical grid lines
+    const latStep = (area.north - area.south) / 10;
+    const lngStep = (area.east - area.west) / 50;
   
-    // Only Vertical grid lines
-    for (let i = 0; i <= 50; i++) {  // Increase the iteration for more lines (adjust the number for spacing)
+    for (let i = 0; i <= 50; i++) {
       const lng = area.west + lngStep * i;
       const latStart = area.south;
       const latEnd = area.north;
   
-      // Draw vertical grid lines only
       gridLinesArray.push([
         { lat: latStart, lng },
         { lat: latEnd, lng }
@@ -107,7 +188,6 @@ const MapComponent = forwardRef(({ onDispatchDrone }, ref) => {
   
     setGridLines(gridLinesArray);
   };
-  
 
   const handleSearch = useCallback(() => {
     if (typeof window !== 'undefined' && window.google && window.google.maps) {
@@ -132,6 +212,13 @@ const MapComponent = forwardRef(({ onDispatchDrone }, ref) => {
     }
   }, []);
 
+  const handleSearchInputChange = (e) => {
+    setSearchTerm(e.target.value);
+    if (!autocompleteRef.current) {
+      handleSearch(); // Initialize Autocomplete only if not already set up
+    }
+  };
+
   const dispatchDroneToArea = async (area) => {
     try {
       const requestData = {
@@ -145,7 +232,7 @@ const MapComponent = forwardRef(({ onDispatchDrone }, ref) => {
         },
       };
 
-      const response = await axios.post('http://172.168.5.7:3001/drone/dispatch/rectangle', requestData);
+      const response = await axios.post('http://172.168.35.117:3001/drone/dispatch/rectangle', requestData);
       console.log('Drone dispatched:', response.data);
       onDispatchDrone('Drone successfully dispatched to the selected area');
     } catch (error) {
@@ -164,14 +251,63 @@ const MapComponent = forwardRef(({ onDispatchDrone }, ref) => {
 
   return (
     <div className="map-wrapper">
+      {/* Search input with controlled value */}
       <input
         ref={searchBoxRef}
         type="text"
         placeholder="Search a place"
         className="search-box"
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
+        value={searchTerm} // Controlled input
+        onChange={handleSearchInputChange} // Update search term as user types
       />
+
+      {/* Draggable Drone Camera Feed */}
+      <div 
+        className="drone-camera-feed"
+        style={{
+          transform: `translate(${cameraPosition.x}px, ${cameraPosition.y}px)`,
+          cursor: isDragging ? 'grabbing' : 'grab'
+        }}
+        onMouseDown={handleMouseDown}
+      >
+        <div className="camera-feed-header">
+          <div className="camera-feed-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            Drone Camera Feed
+          </div>
+          <div className="camera-feed-controls">
+            <div className="live-indicator">
+              <div className="live-dot"></div>
+              LIVE
+            </div>
+            <button 
+              className="fullscreen-button"
+              onClick={() => window.open('/camera-feed', '_blank')}
+              title="Open in fullscreen"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M15 3h6v6M14 10l7-7M9 21H3v-6M10 14l-7 7" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div className="camera-feed-content">
+          Connecting to drone camera...
+        </div>
+      </div>
 
       <GoogleMap
         ref={mapRef}
@@ -186,7 +322,7 @@ const MapComponent = forwardRef(({ onDispatchDrone }, ref) => {
             key={index}
             path={line}
             options={{
-              strokeColor: '#00FF00', // Grid line color
+              strokeColor: '#00FF00',
               strokeOpacity: 0.6,
               strokeWeight: 2,
             }}

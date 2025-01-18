@@ -1,41 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { Bot, Send, X, BatteryMedium, Signal, Cloud, Sun, CloudRain, Wind, Droplets, ThermometerSun } from 'lucide-react';
+import { Bot, Send, X, BatteryMedium, Signal, Cloud } from 'lucide-react';
 import { AURA_SYSTEM_CONTEXT, generateEnhancedPrompt, getQueryType } from './AuraPrompts';
 import './ChatInterface.css';
 
+// At the top of ChatInterface.js, right after imports
 const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
 
-const WeatherCard = ({ weather }) => {
-  return (
-    <div className="weather-card">
-      <div className="weather-header">
-        <div className="weather-icon">
-          {weather.condition === 'Clear' ? <Sun /> : 
-           weather.condition === 'Cloudy' ? <Cloud /> : <CloudRain />}
-        </div>
-        <div className="weather-info">
-          <div className="weather-temp">{weather.temperature}°C</div>
-          <div className="weather-desc">{weather.condition}</div>
-        </div>
-      </div>
-      <div className="weather-details">
-        <div className="weather-detail-item">
-          <Wind size={16} />
-          <span>Wind: {weather.windSpeed}</span>
-        </div>
-        <div className="weather-detail-item">
-          <Droplets size={16} />
-          <span>Humidity: {weather.humidity}%</span>
-        </div>
-        <div className="weather-detail-item">
-          <ThermometerSun size={16} />
-          <span>Feels like: {weather.feelsLike}°C</span>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const ChatInterface = ({ droneStatus, missionData }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -45,10 +16,10 @@ const ChatInterface = ({ droneStatus, missionData }) => {
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
+  // Then instead of initializing in the component, move it outside
   const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
   useEffect(() => {
-    console.log('API Key available:', !!GEMINI_API_KEY);
     if (messages.length === 0) {
       setMessages([{
         role: 'assistant',
@@ -89,102 +60,41 @@ const ChatInterface = ({ droneStatus, missionData }) => {
     if (!input.trim() || isLoading) return;
 
     try {
-      setIsLoading(true);
-      const userMessage = { role: 'user', content: input };
-      setMessages(prev => [...prev, userMessage]);
+        setIsLoading(true);
+        const userMessage = { role: 'user', content: input };
+        setMessages(prev => [...prev, userMessage]);
 
-      // Check if it's a weather query
-      if (input.toLowerCase().includes('weather')) {
-        // Simulate weather data - In real app, this would come from a weather API
-        const weatherData = {
-          temperature: 25,
-          condition: 'Clear',
-          windSpeed: '5 km/h',
-          humidity: 65,
-          feelsLike: 27
-        };
+        // Log to check if API key is available
+        console.log('API Key available:', !!GEMINI_API_KEY);
 
-        const response = {
-          text: `Current weather conditions are suitable for drone operations:
-• Temperature: ${weatherData.temperature}°C
-• Wind Speed: ${weatherData.windSpeed}
-• Conditions: ${weatherData.condition}
-
-Based on these conditions, it's safe to proceed with drone dispatch. Would you like me to help you plan the mission?`,
-          weatherData: weatherData
-        };
-
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: response.text,
-          type: 'weather',
-          weatherData: weatherData
-        }]);
-      } else {
-        // Regular chat handling using Gemini API
         const model = genAI.getGenerativeModel({ 
-          model: 'gemini-pro',
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 1000,
-            topP: 0.8,
-            topK: 40,
-          }
+            model: 'gemini-pro'
         });
 
-        const context = {
-          droneStatus: {
-            battery: droneStatus?.battery ?? 100,
-            signalStrength: droneStatus?.signalStrength ?? 100,
-            status: droneStatus?.status ?? 'Ready'
-          },
-          missionData: {
-            areaCovered: missionData?.areaCovered ?? '0%',
-            objectsDetected: missionData?.objectsDetected ?? 0,
-            weatherCondition: missionData?.weatherCondition ?? 'Clear',
-            windSpeed: missionData?.windSpeed ?? '0 km/h'
-          },
-          currentTime: new Date().toISOString()
-        };
-
-        const enhancedPrompt = generateEnhancedPrompt(input, context);
-        
-        const chat = await model.startChat({
-          history: [
-            { role: 'system', parts: [AURA_SYSTEM_CONTEXT] },
-            ...messages.map(msg => ({
-              role: msg.role,
-              parts: [msg.content],
-            }))
-          ],
-        });
-
-        const result = await chat.sendMessage(enhancedPrompt);
+        // Simplify the chat initialization first
+        const chat = await model.startChat();
+        const result = await chat.sendMessage(input);
         const response = await result.response;
         
         setMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: response.text(),
-          type: getQueryType(input)
+            role: 'assistant', 
+            content: response.text(),
+            type: 'general'
         }]);
-      }
-      
-      if (textareaRef.current) {
-        textareaRef.current.style.height = '48px';
-      }
-      setInput('');
-      
+        
+        setInput('');
+        
     } catch (error) {
-      console.error('Chat error:', error);
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: `Error: ${error.message}`,
-        type: 'error'
-      }]);
+        console.error('Chat error:', error);
+        setMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: `Error: ${error.message}`,
+            type: 'error'
+        }]);
     } finally {
-      setIsLoading(false);
+        setIsLoading(false);
     }
-  };
+};
 
   return (
     <div className="chat-interface">
@@ -225,9 +135,6 @@ Based on these conditions, it's safe to proceed with drone dispatch. Would you l
           {messages.map((message, index) => (
             <div key={index} className={`message ${message.role} ${message.type || ''}`}>
               {message.content}
-              {message.type === 'weather' && message.weatherData && (
-                <WeatherCard weather={message.weatherData} />
-              )}
             </div>
           ))}
           <div ref={messagesEndRef} />
